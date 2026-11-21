@@ -313,3 +313,16 @@ FILE_MAX_SIZE = 1000000000
 # Managed file extenions for file submission, comma separated
 # TODO add zip, gz and tar.gz
 FILE_ALLOWED_EXTENSIONS = txt,sh,pdf,html,json
+
+# Hybrid search (see docs: hybrid_enabled=False = pure keyword, today's behaviour)
+[Search]
+hybrid_enabled = False
+embedder_source = userProvided
+embedder_model = sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+embedder_dimensions = 384
+semantic_ratio_default = 0.4
+semantic_ratio_exact = 0.1
+semantic_ratio_conceptual = 0.7
+semantic_ratio_overrides = {"pdf": 0.5, "ocr": 0.5, "filename": 0.2}
+show_ranking_score = False
+entity_boost = True

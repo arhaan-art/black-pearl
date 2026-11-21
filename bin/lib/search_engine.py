@@ -32,6 +32,11 @@ from lib.objects import Titles
 from lib.objects import UsersAccount
 from lib import chats_viewer
 from packages import Date
+import re as _re
+try:
+    from lib.search_embedding import get_embedding_service
+except Exception:
+    get_embedding_service = None
 
 logging.config.dictConfig(ail_logger.get_config(name='ail'))
 logger = logging.getLogger()
@@ -40,6 +45,35 @@ config_loader = ConfigLoader()
 IS_MEILISEARCH_ENABLED = config_loader.get_config_boolean('Indexer', 'meilisearch')
 M_URL = config_loader.get_config_str('Indexer', 'meilisearch_url')
 M_KEY = config_loader.get_config_str('Indexer', 'meilisearch_key')
+
+def _cfg(section, key, default, cast=str):
+    try:
+        if not config_loader.has_section(section) or not config_loader.has_option(section, key):
+            return default
+        raw = config_loader.get_config_str(section, key)
+        return cast(raw) if cast is not str else raw
+    except Exception:
+        return default
+
+SEARCH_CONFIG = {
+    'hybrid_enabled': _cfg('Search', 'hybrid_enabled', False, lambda v: str(v).lower() in ('1','true','yes')),
+    'embedder_source': _cfg('Search', 'embedder_source', 'userProvided'),
+    'embedder_model': _cfg('Search', 'embedder_model', 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'),
+    'embedder_dimensions': _cfg('Search', 'embedder_dimensions', 384, int),
+    'semantic_ratio_default': _cfg('Search', 'semantic_ratio_default', 0.4, float),
+    'semantic_ratio_exact': _cfg('Search', 'semantic_ratio_exact', 0.1, float),
+    'semantic_ratio_conceptual': _cfg('Search', 'semantic_ratio_conceptual', 0.7, float),
+    'show_ranking_score': _cfg('Search', 'show_ranking_score', False, lambda v: str(v).lower() in ('1','true','yes')),
+    'entity_boost': _cfg('Search', 'entity_boost', True, lambda v: str(v).lower() not in ('0','false','no')),
+}
+try:
+    import json as _json
+    SEARCH_CONFIG['semantic_ratio_overrides'] = _json.loads(_cfg('Search', 'semantic_ratio_overrides', '{}') or '{}')
+except Exception:
+    SEARCH_CONFIG['semantic_ratio_overrides'] = {}
+EMBEDDER_NAME = 'default'
+FACET_ATTRIBUTES = ['last', 'first', 'lang', 'source', 'entity_type', 'tags', 'fid', 'type', 'domain_type']
+SEARCHABLE_ATTRIBUTES = ['title', 'name', 'username', 'entities.value', 'content']
 r_search = config_loader.get_db_conn("Kvrocks_Searchs")
 config_loader = None
 
@@ -50,6 +84,62 @@ def get_obj_uuid5(obj_gid):
 
 def is_meilisearch_enabled():
     return IS_MEILISEARCH_ENABLED
+
+
+_ENTITY_PATTERNS = [
+    ('onion', _re.compile(r'\b[a-z2-7]{56}\.onion\b')),
+    ('domain', _re.compile(r'\b[a-z0-9.-]+\.(?:onion|i2p|com|net|org)\b')),
+    ('btc', _re.compile(r'\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b|\bbc1[a-z0-9]{39,59}\b')),
+    ('eth', _re.compile(r'\b0x[a-fA-F0-9]{40}\b')),
+    ('xmr', _re.compile(r'\b4[0-9AB][1-9A-HJ-NP-Za-km-z]{93}\b')),
+    ('cve', _re.compile(r'\bCVE-\d{4}-\d{4,7}\b', _re.IGNORECASE)),
+    ('sha256', _re.compile(r'\b[a-fA-F0-9]{64}\b')),
+    ('email', _re.compile(r'\b[\w.+-]+@[\w-]+\.[\w.-]+\b')),
+    ('username', _re.compile(r'(?<!\w)@[\w.-]{2,64}\b')),
+]
+_SYNONYMS = {'btc': 'bitcoin', 'bitcoin': 'btc', 'xmr': 'monero', 'monero': 'xmr', 'eth': 'ethereum', 'ethereum': 'eth'}
+
+def detect_entities(query):
+    found = []
+    for etype, pat in _ENTITY_PATTERNS:
+        for m in pat.finditer(query or ''):
+            found.append({'type': etype, 'value': m.group(0)})
+    return found
+
+def expand_query(query):
+    expanded, terms = query or '', []
+    for token in list((query or '').lower().split()):
+        if token in _SYNONYMS and _SYNONYMS[token] not in terms:
+            terms.append(_SYNONYMS[token])
+    if terms:
+        expanded = query + ' ' + ' '.join(terms[:5])
+    return expanded, terms
+
+def get_semantic_ratio(indexes, sort='best', query=None):
+    if not SEARCH_CONFIG.get('hybrid_enabled') or sort == 'hybrid-off':
+        return 0.0
+    # Entity/hash/domain queries regress under semantic blending (eval:
+    # entity Recall@10 0.75 -> 0.667 at ratio 0.4): keep them keyword-led.
+    if query and detect_entities(query):
+        return float(SEARCH_CONFIG.get('semantic_ratio_exact', 0.1))
+    ratio = SEARCH_CONFIG.get('semantic_ratio_default', 0.4)
+    for idx in (indexes or []):
+        if idx in SEARCH_CONFIG.get('semantic_ratio_overrides', {}):
+            ratio = float(SEARCH_CONFIG['semantic_ratio_overrides'][idx]); break
+    return float(ratio)
+
+def add_embeddings(document):
+    """Single choke point: attach _vectors.default; failure never blocks indexing."""
+    if not document or not SEARCH_CONFIG.get('hybrid_enabled') or get_embedding_service is None:
+        return document
+    try:
+        svc = get_embedding_service(SEARCH_CONFIG['embedder_model'], SEARCH_CONFIG['embedder_dimensions'], SEARCH_CONFIG['embedder_source'])
+        vec = svc.embed_document(document.get('content') or document.get('title') or '')
+        if vec:
+            document['_vectors'] = {EMBEDDER_NAME: vec}
+    except Exception as e:
+        logger.warning(f'embedding failed, indexing without vector: {e}')
+    return document
 
 
 # TODO One index for all forums ???
@@ -197,23 +287,54 @@ class MeiliSearch:
         task_uid = getattr(task, 'task_uid', None) or task.get('taskUid')
         return self.client.wait_for_task(task_uid, timeout_in_ms=timeout_in_ms)
 
-    def search(self, indexes, query, nb=20, page=1, timestamp_from=None, timestamp_to=None, sort='recent', forum_ids=None, forum_types=None):
+    def search(self, indexes, query, nb=20, page=1, timestamp_from=None, timestamp_to=None, sort='recent', forum_ids=None, forum_types=None, facets_filter=None, explain=False, semantic_ratio=None):
         # TODO investigate attributesToRetrieve speed
         end_query = []
         for index in indexes:
+            filters = []
             q = {'indexUid': index,
                  'q': query,
-                 'attributesToSearchOn': ['content'],
+                 'attributesToSearchOn': SEARCHABLE_ATTRIBUTES,
                  'attributesToCrop': ['content'],
                  'attributesToHighlight': ['content'],
                  'highlightPreTag': '🔎⏩',
                  'highlightPostTag': '⏪🔍',
                  'cropLength': 100,
-                 'showMatchesPosition': False,
+                 'showMatchesPosition': bool(explain),
+                 'facets': FACET_ATTRIBUTES,
                  }
+            if explain or SEARCH_CONFIG.get('show_ranking_score'):
+                q['showRankingScore'] = True
+                q['showRankingScoreDetails'] = True
+            # hybrid_enabled=False is the kill-switch/rollback: never send a
+            # vector, even for sort='hybrid' or an explicit semantic_ratio.
+            if not SEARCH_CONFIG.get('hybrid_enabled'):
+                _ratio = 0.0
+            elif semantic_ratio is not None:
+                _ratio = float(semantic_ratio)
+            else:
+                _ratio = get_semantic_ratio([index], sort, query=query)
+                if sort == 'hybrid' and not _ratio:
+                    _ratio = SEARCH_CONFIG.get('semantic_ratio_default', 0.4)
+            if _ratio and get_embedding_service is not None:
+                try:
+                    _svc = get_embedding_service(SEARCH_CONFIG['embedder_model'], SEARCH_CONFIG['embedder_dimensions'], SEARCH_CONFIG['embedder_source'])
+                    _vec = _svc.embed_query(query)
+                    if _vec:
+                        q['vector'] = _vec
+                        q['hybrid'] = {'semanticRatio': _ratio, 'embedder': EMBEDDER_NAME}
+                except Exception as e:
+                    logger.warning(f'query embedding failed, keyword fallback: {e}')
+            if facets_filter:
+                _ff = []
+                for _k, _vals in facets_filter.items():
+                    if _k in FACET_ATTRIBUTES and _vals:
+                        _esc = [str(v).replace('\\', '\\\\').replace("'", "\\'") for v in _vals]
+                        _ff.append(_k + ' IN [' + ', '.join([f"'{v}'" for v in _esc]) + ']')
+                if _ff:
+                    filters.append(' AND '.join(_ff))
             if sort == 'recent':
                 q['sort'] = ['last:desc']
-            filters = []
             if index == 'forum' and forum_ids:
                 escaped_forum_ids = [forum_id.replace('\\', '\\\\').replace("'", "\\'") for forum_id in forum_ids]
                 filters.append('fid IN [' + ', '.join([f"'{forum_id}'" for forum_id in escaped_forum_ids]) + ']')
@@ -261,17 +382,18 @@ class MeiliSearch:
             self._known_indexes.add(index_name)
 
     def setup_index_searchable_filterable_sortable(self, index_name):
-        # restrict searchable attributes
-        self.client.index(index_name).update_searchable_attributes(['content'])
-        filterable_attributes = ['last']
-        if index_name == 'forum':
-            filterable_attributes.extend(['fid', 'type'])
-        if index_name not in MESSAGES_INDEXES:
-            filterable_attributes.append('first')
-        # filter by daterange
+        self.client.index(index_name).update_searchable_attributes(SEARCHABLE_ATTRIBUTES)
+        filterable_attributes = list(FACET_ATTRIBUTES)
         self.client.index(index_name).update_filterable_attributes(filterable_attributes)
-        # sort by date
-        self.client.index(index_name).update_sortable_attributes(filterable_attributes)
+        self.client.index(index_name).update_sortable_attributes(['last', 'first'])
+        try:
+            self.client.index(index_name).update_embedders({EMBEDDER_NAME: {'source': SEARCH_CONFIG['embedder_source'], 'dimensions': SEARCH_CONFIG['embedder_dimensions']}})
+        except Exception as e:
+            logger.warning(f'embedder setup skipped for {index_name}: {e}')
+        try:
+            self.client.index(index_name).update_synonyms({'btc': ['bitcoin'], 'bitcoin': ['btc'], 'xmr': ['monero'], 'monero': ['xmr'], 'eth': ['ethereum'], 'ethereum': ['eth']})
+        except Exception:
+            pass
         # result rank
         # Default:
         #     "words",      -> nb match terms
@@ -281,7 +403,7 @@ class MeiliSearch:
         #     "sort",
         #     "exactness"
         self.client.index(index_name).update_ranking_rules(
-            ['sort', 'words', 'typo', 'proximity', 'attribute', 'exactness'])
+            ['words', 'typo', 'proximity', 'attribute', 'exactness'])
         # fix issue attributesToSearchOn fails on never-populated index
         # https://github.com/meilisearch/meilisearch/issues/5921
         dummy_document = {'uuid': 'dummy', 'content': 'dummy', 'last': 0, 'id': 'dummy'}
@@ -296,6 +418,7 @@ class MeiliSearch:
 
     # replacing existing documents
     def add(self, index, document, retry=3):
+        document = add_embeddings(document)
         try:
             self.client.index(index).add_documents([document], primary_key='uuid')
         except (MeilisearchCommunicationError, MeilisearchApiError, MeilisearchTimeoutError) as e:
@@ -309,6 +432,7 @@ class MeiliSearch:
 
     def update(self, index, document, retry=3):
         self.ensure_index(index)
+        document = add_embeddings(document)
         try:
             self.client.index(index).update_documents([document], primary_key='uuid')
         except (MeilisearchCommunicationError, MeilisearchApiError, MeilisearchTimeoutError) as e:
@@ -601,12 +725,16 @@ INDEXING_FUNCTIONS = {
 
 
 def remove_document(index_name, obj_gid):
+    if Engine is None:
+        return
     Engine.remove(index_name, get_obj_uuid5(obj_gid))
 
 
 def delete_index(index_name):
+    if Engine is None:
+        return
     Engine._delete(index_name)
-    Engine.client._create_index(index_name)
+    Engine._create_index(index_name)
 
 def log(user_id, index, to_search):
     logger.warning(f'{user_id} search: {index} - {to_search}')
@@ -693,9 +821,18 @@ def api_search(data):
     if not indexes:
         indexes = get_indexes_names()
 
+    if Engine is None or not is_meilisearch_enabled():
+        return {"status": "error", "error_type": "meilisearch_unreachable", "reason": "Meilisearch is disabled or unreachable."}, 503
     sort = data.get("sort", "recent")
-    if sort != "best" and sort != "recent":
+    if sort not in ("best", "recent", "hybrid"):
         return {"status": "error", "reason": "Invalid sort"}, 400
+    facets_filter = data.get("facets") or {}
+    if facets_filter and not isinstance(facets_filter, dict):
+        return {"status": "error", "reason": "Invalid facets"}, 400
+    for _k in facets_filter:
+        if _k not in FACET_ATTRIBUTES:
+            return {"status": "error", "reason": f"Unknown facet: {_k}"}, 400
+    explain = bool(data.get("explain"))
 
     forum_ids = data.get("forum_ids", [])
     if isinstance(forum_ids, str):
@@ -722,9 +859,12 @@ def api_search(data):
         except:
             return {"status": "error", "reason": "Invalid date to"}, 400
 
+    entity_matches = detect_entities(to_search or '')
+    expanded_query, expanded_terms = expand_query(to_search or '')
     try:
-        result = Engine.search(indexes, to_search, page=page, nb=nb_per_page, timestamp_from=timestamp_from, sort=sort,
-                               timestamp_to=timestamp_to, forum_ids=forum_ids, forum_types=forum_types)
+        result = Engine.search(indexes, expanded_query, page=page, nb=nb_per_page, timestamp_from=timestamp_from, sort=sort,
+                               timestamp_to=timestamp_to, forum_ids=forum_ids, forum_types=forum_types,
+                               facets_filter=facets_filter, explain=explain)
     except MeilisearchTimeoutError:
         return {
             "status": "error",
@@ -803,8 +943,15 @@ def api_search(data):
                     print('ERROR UNKNOWN OBJ RESULT', res)
                     continue  # TODO ERROR
 
-            meta['result'] = res['_formatted']['content']
+            meta['result'] = (res.get('_formatted') or {}).get('content', '')
+            if explain:
+                meta['explanation'] = {'rankingScore': res.get('_rankingScore'), 'rankingScoreDetails': res.get('_rankingScoreDetails'),
+                    'matchedTerms': list((res.get('_matchesPosition') or {}).keys()), 'highlightedSnippet': meta['result'],
+                    'semanticRatio': get_semantic_ratio(indexes, sort, query=to_search), 'expandedTerms': expanded_terms, 'entityMatches': entity_matches}
             objs.append(meta)
+    pagination['facets'] = result.get('facetDistribution') or {}
+    pagination['expanded_terms'] = expanded_terms
+    pagination['entity_matches'] = entity_matches
     return (objs, pagination), 200
 
 ## --API-- ##

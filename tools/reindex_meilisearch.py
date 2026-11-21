@@ -50,6 +50,8 @@ def parse_args():
         choices=sorted(search_engine.INDEXING_FUNCTIONS.keys()),
         help='Dataset type to index (default: all)',
     )
+    parser.add_argument('--embed', action='store_true', help='Enable hybrid embedding during reindex (sets [Search] hybrid at runtime)')
+    parser.add_argument('--embed-only', action='store_true', help='Backfill _vectors only (documents re-fetched, content unchanged)')
     parser.add_argument(
         '--reset',
         action='store_true',
@@ -71,6 +73,9 @@ def main():
     if not search_engine.Engine.is_up():
         raise RuntimeError('Meilisearch is not reachable')
 
+    if args.embed or args.embed_only:
+        search_engine.SEARCH_CONFIG['hybrid_enabled'] = True
+        print('Embedding enabled for this run (hash fallback if sentence-transformers unavailable).')
     ensure_indexes_ready(reset=args.reset)
     print('Indexes are ready.')
 
