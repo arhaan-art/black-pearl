@@ -82,6 +82,12 @@ class Indexer(AbstractModule):
                         subtype, thread_id = thread_id.split(':', 1)
                         search_engine.index_forum_thread(ForumThreads.ForumThread(thread_id, subtype))
 
+                elif self.obj.type == 'pdf':
+                    search_engine.Engine.index_pdf(self.obj)
+
+                elif self.obj.type == 'ocr':
+                    search_engine.Engine.index_ocr(self.obj)
+
             except MeilisearchError:
                 self.is_up = False
                 print('meilisearch down, sending message back to queue')

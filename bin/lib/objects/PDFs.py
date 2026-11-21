@@ -117,6 +117,20 @@ class PDF(AbstractDaterangeObject):
         else:
             return self.get_file_content()
 
+    def get_search_document(self):
+        """Extracted/OCR text so PDFs are indexable (was None via get_content)."""
+        try:
+            content = self.get_content_sample()
+        except Exception:
+            content = None
+        if not content:
+            return None
+        doc = super().get_search_document() if hasattr(super(), 'get_search_document') else None
+        if doc:
+            doc['content'] = content
+            return doc
+        return {'uuid': self.id, 'id': self.id, 'content': content}
+
     def get_markdown_id(self):
         return self.get_correlation('item').get('item', []).pop()[1:]
 

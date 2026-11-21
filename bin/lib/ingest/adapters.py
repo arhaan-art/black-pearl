@@ -156,8 +156,22 @@ class FileAdapter(IngestAdapter):
         if extracted.warnings:
             env.attributes["ingest.warnings"] = "; ".join(extracted.warnings)
         env.children_meta = [  # type: ignore[attr-defined]
-            {"embedded_path": c.embedded_path, "mimetype": c.metadata.get("mimetype", "")}
+            {"embedded_path": c.embedded_path, "mimetype": c.metadata.get("mimetype", ""),
+             "text": c.text}
             for c in extracted.children]
+        # Preserve child docs so the pipeline can fork child envelopes
+        # (regression fix: previously only path+mimetype were kept and
+        # child text was discarded).
+        env.extracted_children = extracted.children  # type: ignore[attr-defined]
+        codes = getattr(extracted, "codes", None)
+        if codes:
+            env.attributes["docproc.codes"] = str(len(codes))
+        conf = getattr(extracted, "confidence", None)
+        if conf is not None:
+            try:
+                env.attributes["docproc.confidence"] = str(conf.overall)
+            except Exception:
+                pass
         return env
 
 

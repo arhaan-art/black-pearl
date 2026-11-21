@@ -131,6 +131,23 @@ class CodeReader(AbstractModule):
 
         return barcodes, qrcodes
 
+    def extract_structured(self, path):
+        """Structured CodeResult list via ingest CodeProcessor (zxing>cv2>pyzbar).
+
+        Returns [] when the processor/deps are unavailable so compute()
+        falls back to the legacy pyzbar/cv2/QReader path unchanged.
+        QrCodes/BarCodes ids stay sha256(content); format/decoder/quality
+        are persisted as extra fields without changing correlations/Tags.
+        """
+        try:
+            sys.path.insert(0, os.path.join(os.environ.get('AIL_BIN', ''), 'lib'))
+            from ingest.processors.image import CodeProcessor  # type: ignore
+            with open(path, 'rb') as fh:
+                return CodeProcessor().extract_codes(fh.read())
+        except Exception as exc:
+            self.logger.info(f'structured code extraction unavailable: {exc}')
+            return []
+
     def compute(self, message):
         obj = self.get_obj()
 
@@ -144,7 +161,12 @@ class CodeReader(AbstractModule):
 
         # image - screenshot
         path = self.obj.get_filepath()
+        structured = self.extract_structured(path)
+        self._structured = {c.content: c for c in structured} if structured else {}
         barcodes, qrcodes = self.extract_codes(path)
+        if structured and not (barcodes or qrcodes):
+            qrcodes = [c.content for c in structured if c.kind == 'qrcode']
+            barcodes = [c.content for c in structured if c.kind == 'barcode']
         if not barcodes and not qrcodes:
             self.add_to_cache()
             return None
@@ -156,6 +178,15 @@ class CodeReader(AbstractModule):
             qr_code = QrCodes.create(content, self.obj)  # copy screenshot + image daterange
             if not qr_code:
                 print('Error Empty content', self.obj.get_global_id())
+            _c = getattr(self, '_structured', {}).get(content)
+            if _c is not None:
+                try:
+                    qr_code._set_field('format', _c.format)
+                    qr_code._set_field('decoder', _c.decoder)
+                    if _c.quality_raw is not None:
+                        qr_code._set_field('quality', str(_c.quality_raw))
+                except Exception:
+                    pass
             qr_code.add(qr_code.get_date(), self.obj)
 
             for obj_type in ['chat', 'domain', 'message']:  # TODO ITEM ???

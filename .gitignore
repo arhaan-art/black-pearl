@@ -58,3 +58,4 @@ deanon_cache/ *.parquet *.feather
 .ipynb_checkpoints/
 *.log *.log.*
 .mcp.json
+.venv-docproc/

@@ -31,11 +31,57 @@ class StageConfig:
 
 
 @dataclass
+class DocProcConfig:
+    """Document/multimedia processing config (design §10)."""
+    ocr_engine_order: List[str] = field(default_factory=lambda: ["ocrmypdf", "tesseract", "paddle", "easyocr"])
+    ocr_accept: float = 0.85
+    ocr_reprocess_below: float = 0.60
+    tesseract_psm: int = 6
+    word_conf_min: float = 0.60
+    code_decoders: List[str] = field(default_factory=lambda: ["zxingcpp", "cv2", "pyzbar", "qreader"])
+    minhash_enabled: bool = False
+    lingua_enabled: bool = False
+    translation_provider: str = "libretranslate"
+    max_embedded: int = 50
+    max_bytes: int = 20_000_000
+
+    def to_processor_config(self) -> Dict[str, Any]:
+        return {"ocr_engine_order": list(self.ocr_engine_order),
+                "ocr_accept": self.ocr_accept,
+                "ocr_reprocess_below": self.ocr_reprocess_below,
+                "tesseract_psm": self.tesseract_psm,
+                "word_conf_min": self.word_conf_min,
+                "code_decoders": list(self.code_decoders),
+                "minhash_enabled": self.minhash_enabled,
+                "lingua_enabled": self.lingua_enabled,
+                "translation_provider": self.translation_provider,
+                "max_embedded": self.max_embedded, "max_bytes": self.max_bytes}
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DocProcConfig":
+        cfg = cls()
+        for k in cfg.__dataclass_fields__:  # type: ignore[attr-defined]
+            if k in data:
+                v = data[k]
+                if k in ("ocr_engine_order", "code_decoders") and isinstance(v, str):
+                    v = [s.strip() for s in v.split(",") if s.strip()]
+                elif k in ("ocr_accept", "ocr_reprocess_below", "word_conf_min"):
+                    v = float(v)
+                elif k in ("tesseract_psm", "max_embedded", "max_bytes"):
+                    v = int(v)
+                elif k in ("minhash_enabled", "lingua_enabled"):
+                    v = bool(v) if not isinstance(v, str) else v.lower() in ("1", "true", "yes")
+                setattr(cfg, k, v)
+        return cfg
+
+
+@dataclass
 class PipelineConfig:
     source_id: str = "default"
     stages: List[StageConfig] = field(default_factory=list)
     tika_url: Optional[str] = None
     gate_enabled: bool = True
+    docproc: DocProcConfig = field(default_factory=DocProcConfig)
     raw: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -57,9 +103,10 @@ def _from_dict(data: Dict[str, Any], source_id: str) -> PipelineConfig:
                 penalty_seconds=float(item.get("penalty_seconds", 30.0)),
                 queue_count_limit=int(item.get("queue_count_limit", 10_000)),
                 queue_bytes_limit=int(item.get("queue_bytes_limit", 1_073_741_824))))
+    docproc = DocProcConfig.from_dict(data.get("docproc") or {})
     return PipelineConfig(source_id=data.get("source_id", source_id), stages=stages,
                           tika_url=data.get("tika_url"), gate_enabled=bool(data.get("gate_enabled", True)),
-                          raw=data)
+                          docproc=docproc, raw=data)
 
 
 def load_pipeline_config(path: Optional[str] = None, source_id: str = "default") -> PipelineConfig:
@@ -94,8 +141,12 @@ def load_pipeline_config(path: Optional[str] = None, source_id: str = "default")
     if section is None:
         return default_pipeline(source_id)
     names = [s.strip() for s in parser.get(section, "stages", fallback=",".join(DEFAULT_STAGES)).split(",") if s.strip()]
+    docproc_data: Dict[str, Any] = {}
+    if parser.has_section("docproc"):
+        docproc_data = dict(parser.items("docproc"))
     return PipelineConfig(
         source_id=section,
         stages=[StageConfig(name=n) for n in names],
         tika_url=parser.get(section, "tika_url", fallback=None) or None,
-        gate_enabled=parser.getboolean(section, "gate_enabled", fallback=True))
+        gate_enabled=parser.getboolean(section, "gate_enabled", fallback=True),
+        docproc=DocProcConfig.from_dict(docproc_data))

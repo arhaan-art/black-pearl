@@ -69,11 +69,11 @@ def load_messages_indexes():
 
 # FORUMS_INDEXES = load_forums_indexes()
 MESSAGES_INDEXES = load_messages_indexes()
-DATERANGE_INDEXES = {'filename', 'title'}
+DATERANGE_INDEXES = {'filename', 'title', 'pdf', 'ocr'}
 
 
 def load_indexes_names():
-    names = {'desc-dom', 'desc-img', 'desc-screen', 'filename', 'forum', 'title'}
+    names = {'desc-dom', 'desc-img', 'desc-screen', 'filename', 'forum', 'title', 'pdf', 'ocr'}
     for domain_types in Domains.get_all_domains_types():
         names.add(domain_types)
     for chat_name in MESSAGES_INDEXES:
@@ -103,6 +103,8 @@ def index_all():
     index_domains_descriptions()
     index_titles()
     index_file_names()
+    index_pdfs()
+    index_ocrs()
 
 
 class MeiliSearch:
@@ -373,6 +375,16 @@ class MeiliSearch:
             user_account = UsersAccount.UserAccount(user_account_id, user_account_subtype)
             self.index_obj(index, user_account, timestamp)
 
+    def index_pdf(self, obj):
+        document = obj.get_search_document()
+        if document:
+            self.update('pdf', document)
+
+    def index_ocr(self, obj):
+        document = obj.get_search_document()
+        if document:
+            self.update('ocr', document)
+
 
 if IS_MEILISEARCH_ENABLED:
     Engine = MeiliSearch()
@@ -537,6 +549,38 @@ def index_file_names():
             Engine.update(index, document)
 
 
+def index_pdf(obj):
+    index = 'pdf'
+    document = obj.get_search_document()
+    if document:
+        Engine.update(index, document)
+
+
+def index_pdfs():
+    try:
+        from lib.objects import PDFs
+        for obj in PDFs.PDFs().get_iterator():
+            index_pdf(obj)
+    except Exception:
+        pass
+
+
+def index_ocr(obj):
+    index = 'ocr'
+    document = obj.get_search_document()
+    if document:
+        Engine.update(index, document)
+
+
+def index_ocrs():
+    try:
+        from lib.objects import Ocrs
+        for obj in Ocrs.Ocrs().get_iterator():
+            index_ocr(obj)
+    except Exception:
+        pass
+
+
 INDEXING_FUNCTIONS = {
     'all': index_all,
     'crawled': index_crawled,
@@ -549,6 +593,8 @@ INDEXING_FUNCTIONS = {
     'domains_descriptions': index_domains_descriptions,
     'titles': index_titles,
     'file_names': index_file_names,
+    'pdfs': index_pdfs,
+    'ocrs': index_ocrs,
 }
 
 ## --INDEXER-- ##

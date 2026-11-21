@@ -220,12 +220,21 @@ class TikaExtractor:
 
 
 class DocumentExtractor:
-    """Facade: Tika when reachable, otherwise the Python fallback."""
+    """Facade: Tika when reachable, otherwise the processor registry.
 
-    def __init__(self, tika_url: Optional[str] = None, prefer_tika: bool = True) -> None:
+    Public signatures are unchanged (tests import them); internally the
+    fallback path delegates to ``processors.run_doc_pipeline`` so PDF /
+    image / archive / office / OCR / codes handling is modular. The
+    legacy ``PythonFallbackExtractor`` is kept as the always-available
+    Text/PdfNative processors for direct callers.
+    """
+
+    def __init__(self, tika_url: Optional[str] = None, prefer_tika: bool = True,
+                 docproc_config: Optional[dict] = None) -> None:
         self.fallback = PythonFallbackExtractor()
         self.tika = TikaExtractor(tika_url) if tika_url else None
         self.prefer_tika = prefer_tika
+        self.docproc_config = docproc_config
 
     def extract(self, content: bytes, filename: Optional[str] = None,
                 mimetype: Optional[str] = None) -> ExtractedDoc:
@@ -234,7 +243,39 @@ class DocumentExtractor:
                 return self.tika.extract(content, filename=filename, mimetype=mimetype)
             except Exception as exc:
                 logger.warning("tika extract failed, fallback: %s", exc)
-        return self.fallback.extract(content, filename=filename, mimetype=mimetype)
+        # Registry path (tar/office/image/pdf-embedded now handled); fall
+        # back to the legacy extractor on any registry failure so ingest
+        # never breaks on a host without optional deps.
+        try:
+            from .processors import run_doc_pipeline
+            mime = mimetype or _detect_mimetype(content, filename)
+            # 7z/rar need Tika; without it keep the legacy warning behaviour
+            if mime in ("application/x-7z-compressed", "application/vnd.rar",
+                        "application/x-rar-compressed"):
+                raise RuntimeError(f"{mime} requires Tika")
+            result = run_doc_pipeline(content, mime, filename,
+                                      config=self.docproc_config)
+            # Legacy compat: plain-text fallback reported "python-fallback"
+            ext = result.extractor
+            if ext == "text":
+                ext = "python-fallback"
+            doc = ExtractedDoc(text=result.text, metadata=result.metadata,
+                               children=result.children,
+                               extractor=ext,
+                               warnings=list(result.warnings))
+            # codes/confidence are exposed for pipeline stage consumers
+            doc.codes = result.codes  # type: ignore[attr-defined]
+            doc.confidence = result.confidence  # type: ignore[attr-defined]
+            doc.capability_ids = result.capability_ids  # type: ignore[attr-defined]
+            if not doc.text and mime not in ("application/pdf",) and not doc.children:
+                # preserve exact legacy text behaviour for plain blobs
+                legacy = self.fallback.extract(content, filename=filename, mimetype=mimetype)
+                if legacy.text:
+                    return legacy
+            return doc
+        except Exception as exc:
+            logger.debug("registry extract failed, legacy fallback: %s", exc)
+            return self.fallback.extract(content, filename=filename, mimetype=mimetype)
 
     @staticmethod
     def detect_mimetype(content: bytes, filename: Optional[str] = None) -> str:

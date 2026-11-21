@@ -10,7 +10,9 @@ from .adapters import (  # noqa: F401
     ChatAdapter, FeedAdapter, FeederJsonAdapter, FileAdapter, ImporterAdapter,
     IngestAdapter, WebsiteCrawlerAdapter, get_adapter, list_adapters,
 )
-from .config import PipelineConfig, StageConfig, default_pipeline, load_pipeline_config  # noqa: F401
+from .config import (  # noqa: F401
+    DocProcConfig, PipelineConfig, StageConfig, default_pipeline, load_pipeline_config,
+)
 from .dedup import DedupChecker, InMemoryDedupStore, metadata_fingerprint  # noqa: F401
 from .envelope import ContentRef, IngestEnvelope, ProvenanceEvent, RawUnit, SCHEMA_URL  # noqa: F401
 from .extract import DocumentExtractor, PythonFallbackExtractor, TikaExtractor  # noqa: F401
@@ -23,7 +25,7 @@ __all__ = [
     "ChatAdapter", "FeedAdapter", "FeederJsonAdapter", "FileAdapter",
     "ImporterAdapter", "IngestAdapter", "WebsiteCrawlerAdapter",
     "get_adapter", "list_adapters", "PipelineConfig", "StageConfig",
-    "default_pipeline", "load_pipeline_config", "DedupChecker",
+    "DocProcConfig", "default_pipeline", "load_pipeline_config", "DedupChecker",
     "InMemoryDedupStore", "metadata_fingerprint", "ContentRef",
     "IngestEnvelope", "ProvenanceEvent", "RawUnit", "SCHEMA_URL",
     "DocumentExtractor", "PythonFallbackExtractor", "TikaExtractor",

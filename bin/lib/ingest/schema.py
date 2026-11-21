@@ -38,13 +38,32 @@ MISP_TYPES: FrozenSet[str] = frozenset({
 })
 
 # Dublin-Core-ish canonical document fields (IntelMQ harmonization pattern).
+# Extended canonical set (design §5); unknown source keys are kept by the
+# MetadataNormalizer under ``meta.raw:{source}``.
 CANONICAL_DOC_FIELDS: Dict[str, str] = {
     "dc:title": "string",
     "dc:creator": "string",
     "dc:date": "string",
     "dc:language": "string",
+    "dc:publisher": "string",
     "mimetype": "string",
     "source_url": "string",
+    "file.name": "string",
+    "file.size_bytes": "string",
+    "doc.page_count": "string",
+    "doc.word_count": "string",
+    "img.width": "string",
+    "img.height": "string",
+    "img.color_space": "string",
+    "exif.make": "string",
+    "exif.model": "string",
+    "exif.gps_lat": "string",
+    "exif.gps_lon": "string",
+    "pdf.author": "string",
+    "pdf.producer": "string",
+    "pdf.encrypted": "string",
+    "archive.entry_count": "string",
+    "embedded_path": "string",
 }
 
 # OTel-style dotted attribute names the gate accepts without warning.
