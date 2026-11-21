@@ -124,6 +124,17 @@ Configuration lives in [`configs/ingest.cfg`](configs/ingest.cfg) (`[docproc]` s
 
 Nothing above is claimed as working without a recorded verification command — see the "Not verified" list in [docs/ingestion.md](docs/ingestion.md).
 
+## Search (keyword + hybrid)
+
+Location: `bin/lib/search_engine.py` + `bin/lib/search_embedding.py` — Meilisearch indexes fed from `get_search_document()` on chats, messages, user accounts, forum threads/posts, images, screenshots, domains, PDFs and OCR.
+
+- **Keyword by default, hybrid behind a flag** — `[Search] hybrid_enabled = False` in [`configs/core.cfg.sample`](configs/core.cfg.sample) is pure keyword search and the rollback; no vector is sent while it is off.
+- **Hybrid** — `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (384d, chunked + mean-pooled, CPU) with a deterministic hash fallback that never blocks indexing; blend via `semantic_ratio` (default `0.4`, per-index overrides).
+- **Facets & explanations** — filter on `lang`, `source`, `entity_type`, `tags` and more; `explain` returns ranking scores, expanded terms and detected entities (UI: Hybrid radio, facet badges, Why-this-result panel).
+- **Query handling** — entity detection (`.onion`, hashes, CVEs, crypto, emails) and crypto synonym expansion (`btc` ↔ `bitcoin`, …); multilingual vectors match French queries to English documents.
+
+Verified offline (46-doc independent corpus, BM25+cosine proxy — live Meilisearch is blocked on this host by glibc 2.34 < 2.35): hybrid-ST nDCG@10 `0.8629` vs keyword `0.7374`, multilingual `0.3419 → 0.7754`, with an entity-query regression to manage (keep exact/entity search at a low ratio). Full guide, tuning and "Not verified" list: [docs/search.md](docs/search.md).
+
 ## Platform capabilities
 
 - **Collection** — feeders for Discord, Telegram, Matrix and other chat/stream sources; crawling for clear web, Tor (.onion) and I2P, including authenticated sessions with cookies/local-storage reuse.
@@ -196,6 +207,7 @@ doc/                     Platform and API documentation
 ## Documentation
 
 - [docs/ingestion.md](docs/ingestion.md) — ingestion + document processing: architecture diagrams, configuration, adapter/processor guides, install status, verified benchmarks
+- [docs/search.md](docs/search.md) — keyword + hybrid search: architecture, hybrid config and ranking tuning, facets/explanations, multilingual, install status, offline evaluation
 - [doc/README.md](doc/README.md) — main platform documentation
 - [doc/api.md](doc/api.md) — API documentation
 - [HOWTO.md](HOWTO.md) — setup and operations guides

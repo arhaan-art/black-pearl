@@ -1,0 +1,24 @@
+{"id": "market_escrow-keyword", "class": "keyword", "topic": "market_escrow", "query": "darknet market vendor escrow bitcoin payment"}
+{"id": "market_escrow-paraphrase", "class": "paraphrase", "topic": "market_escrow", "query": "illicit marketplace seller holds funds until delivery confirmed"}
+{"id": "market_escrow-multilingual", "class": "multilingual", "topic": "market_escrow", "query": "marché illégal vendeur séquestre paiement"}
+{"id": "market_escrow-entity", "class": "entity", "topic": "market_escrow", "query": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"}
+{"id": "ransomware-keyword", "class": "keyword", "topic": "ransomware", "query": "ransomware encryption ransom note decryptor"}
+{"id": "ransomware-paraphrase", "class": "paraphrase", "topic": "ransomware", "query": "malware locks files and demands money to unlock them"}
+{"id": "ransomware-multilingual", "class": "multilingual", "topic": "ransomware", "query": "logiciel malveillant chiffre fichiers rançon"}
+{"id": "ransomware-entity", "class": "entity", "topic": "ransomware", "query": "CVE-2024-21413"}
+{"id": "phishing-keyword", "class": "keyword", "topic": "phishing", "query": "phishing credential harvesting login page clone"}
+{"id": "phishing-paraphrase", "class": "paraphrase", "topic": "phishing", "query": "fake sign-in website steals usernames and passwords"}
+{"id": "phishing-multilingual", "class": "multilingual", "topic": "phishing", "query": "faux site connexion vole identifiants mot de passe"}
+{"id": "phishing-entity", "class": "entity", "topic": "phishing", "query": "phish-kit-2024@example.com"}
+{"id": "crypto_laundering-keyword", "class": "keyword", "topic": "crypto_laundering", "query": "cryptocurrency mixing tumbler laundering bitcoin"}
+{"id": "crypto_laundering-paraphrase", "class": "paraphrase", "topic": "crypto_laundering", "query": "obscuring the origin of digital currency through blending services"}
+{"id": "crypto_laundering-multilingual", "class": "multilingual", "topic": "crypto_laundering", "query": "mélange cryptomonnaie blanchiment origine fonds"}
+{"id": "crypto_laundering-entity", "class": "entity", "topic": "crypto_laundering", "query": "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"}
+{"id": "cve_exploit-keyword", "class": "keyword", "topic": "cve_exploit", "query": "CVE exploit vulnerability remote code execution patch"}
+{"id": "cve_exploit-paraphrase", "class": "paraphrase", "topic": "cve_exploit", "query": "critical software flaw allows attackers to run code remotely"}
+{"id": "cve_exploit-multilingual", "class": "multilingual", "topic": "cve_exploit", "query": "vulnérabilité critique exécution code distance"}
+{"id": "cve_exploit-entity", "class": "entity", "topic": "cve_exploit", "query": "CVE-2023-4966"}
+{"id": "botnet-keyword", "class": "keyword", "topic": "botnet", "query": "botnet command control C2 infected hosts DDoS"}
+{"id": "botnet-paraphrase", "class": "paraphrase", "topic": "botnet", "query": "network of compromised computers controlled remotely for attacks"}
+{"id": "botnet-multilingual", "class": "multilingual", "topic": "botnet", "query": "réseau ordinateurs infectés contrôlés distance attaque"}
+{"id": "botnet-entity", "class": "entity", "topic": "botnet", "query": "185.220.101.47"}
