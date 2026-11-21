@@ -230,6 +230,7 @@ The default credentials are stored in the `DEFAULT_PASSWORD` file and the file i
 - Main documentation: [doc/README.md](doc/README.md)
 - API documentation: [doc/api.md](doc/api.md)
 - HOWTO guides: [HOWTO.md](HOWTO.md)
+- Unified ingestion engine (architecture, configuration, adapter guide, Tika/Serena/Context7 setup, verified tests/benchmarks): [docs/ingestion.md](docs/ingestion.md)
 
 ## Training
 
