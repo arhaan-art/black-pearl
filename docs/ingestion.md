@@ -302,3 +302,326 @@ Not verified (environment limits, not hidden failures):
   `test_language_bcp47`, web routes) fails pre-existing on missing
   `pyail`/`flask`/`redis` and unset `AIL_BIN`, on untouched code.
 - Docling/unstructured bake-off was not run.
+
+## Document processing (`bin/lib/ingest/processors/`)
+
+The pipeline's `extract_doc` stage delegates to a processor chain in
+`bin/lib/ingest/processors/`. `DocumentExtractor`
+(`bin/lib/ingest/extract.py`) keeps its existing signatures and delegates
+to `ProcessorRegistry`; a successful chain result is mapped to the legacy
+`python-fallback` extractor name for callers that check it. Every
+processor is optional-import / `available()`-gated, so a host without
+Java, Tesseract or Paddle still ingests via the stdlib / PyMuPDF
+fallback. Results flow back as `DocPipelineResult` (`text`, `metadata`,
+`children`, `codes`, `confidence: StageConfidence`, `warnings`,
+`errors: [StageError]`, `capability_ids`) and are forked into child
+envelopes by `FileAdapter` (`children_meta` / `extracted_children`) and
+indexed via `pdf` / `ocr` routes (`search_engine.py`, `Indexer.py`,
+`PDFs.py`).
+
+```text
+                IngestionPipeline  extract_doc
+                          |
+                          v
+            default_registry()  ProcessorRegistry
+            resolve(mimetype, filename) -> sorted by priority,
+                             only available() processors
+                          |
+        +-----------------+-----------------+-------------------+
+        |                 |                 |                   |
+        v                 v                 v                   v
+    PdfNative         ImageProcessor    ArchiveProcessor    OfficeProcessor
+    PdfOcr            OcrProcessor       (zip/tar*/gz/       (OOXML w:p/w:t
+    PdfEmbedded       CodeProcessor       bz2/lzma stdlib)    runs + shared
+    Text / Eml        (QR / barcode)     7z/rar -> Tika       Strings; OLE
+                      cascade <= 3        warning)           -> Tika)
+        +-----------------+-----------------+-------------------+
+                          |
+                          v
+        run_doc_pipeline(): chain -> OCR cascade (if text empty)
+            -> codes -> MetadataNormalizer -> language /
+               translation (degrade-not-fail) -> DocPipelineResult
+                          |
+              +-----------+-----------+
+              v                       v
+    ProcessedDocRegistry        IngestGate check_metadata (layer-2)
+    docproc:registry:{sha256}   + provenance CONTENT_MODIFIED
+    docproc:reprocess queue
+```
+
+```mermaid
+flowchart TD
+    P[IngestionPipeline extract_doc] --> R[ProcessorRegistry resolve by priority + available]
+    R --> N[PdfNative / Text / Eml]
+    R --> I[ImageProcessor + CodeProcessor]
+    R --> A[ArchiveProcessor]
+    R --> O[OfficeProcessor]
+    N -->|text empty| C[OCR cascade max 3 attempts, best-kept]
+    I --> C
+    C --> M[MetadataNormalizer]
+    M --> L[Language / translation degrade-not-fail]
+    L --> D[DocPipelineResult + capability_ids]
+    D --> G[IngestGate check_metadata]
+    D --> S[(ProcessedDocRegistry docproc:registry)]
+    S -->|stale: never-processed / capability-changed / low-confidence| Q[(docproc:reprocess)]
+    Q --> RP[DocReprocessor module]
+    RP -->|confidence-gated overwrite| S
+```
+
+Components (all under `bin/lib/ingest/processors/` unless noted):
+
+| Component | File | Role |
+|---|---|---|
+| Protocol | `base.py` | `BaseProcessor`, `Capability` (`capability_id = name@ver+engine#hash8`), `StageContext` / `StageResult` / `StageError`, `CodeResult`, `StageConfidence` (bands: `>= 0.85` accept, `0.60-0.85` accept-low, `< 0.60` reprocess; Tesseract TSV words with `conf < 0.60` dropped) |
+| PDF | `pdf.py` | `PdfNativeProcessor` (PyMuPDF / `fitz` + embedded children), `PdfOcrProcessor` (OCRmyPDF `redo` -> `force` when native text is empty), `PdfEmbeddedProcessor` |
+| Image / OCR / codes | `image.py` | `ImageProcessor` (+ EXIF), `OcrProcessor` (engine cascade, max 3 attempts, best result kept, emits `ocr:low-confidence`), `CodeProcessor` (`zxingcpp` -> `cv2` -> `pyzbar`; polygon / rect / `quality_raw`; `confidence=None` for the `cv2` path) |
+| OCR engines | `ocr_engines.py` | `TesseractEngine` (`pytesseract` TSV), `OcrMyPdfEngine`, `PaddleEngine` (PaddleOCR v3 `rec_scores`, threshold `0.5`), `EasyOcrEngine` fallback; each `available()`-gated |
+| Archive | `archive.py` | `zip` / `tar` / `tar.gz` / `gz` / `bz2` / `lzma` via stdlib; `7z` / `rar` degrade to a Tika warning |
+| Office | `office.py` | OOXML parsed directly (`w:p` / `w:t` runs + `sharedStrings`); legacy OLE routed to Tika |
+| Metadata | `metadata.py` | `MetadataNormalizer` (Tika / `fitz` / EXIF maps -> canonical `dc:*`, `file.*`, `doc.*`, `img.*`, `exif.*`, `pdf.*`, `archive.*` fields; PDF / EXIF dates -> ISO 8601; GPS IFD `34853` -> decimal; invalid `dc:language` dropped with a warning; `meta.raw:*` passed through without double-prefixing) |
+| Language | `language.py` | Detection via `LanguagesDetector` / `lingua` when installed, stub fallback otherwise; `TranslationProvider` (`LibreTranslateProvider` / `ArgosOfflineProvider` / `NullProvider`) degrades to source text + `translation:unavailable`, never fails the pipeline |
+| Near-dedup | `dedup_text.py` | `datasketch` MinHash (`num_perm=128`, 5-gram), LSH threshold `0.7` + verified Jaccard `>= 0.8` |
+| Registry | `registry_store.py` | `ProcessedDocRegistry` (`docproc:registry:{sha256}`, `docproc:reprocess` queue; `is_current` / `stale_reason` / `should_overwrite` confidence-gated), in-memory fallback when Redis is absent |
+| Orchestration | `__init__.py` | `ProcessorRegistry`, `default_registry()`, `run_doc_pipeline()` (chain -> OCR cascade -> codes -> metadata -> language; OOXML routed to `office`, not `archive`; binary-child sub-text appended to the parent) |
+| Reprocess module | `bin/modules/DocReprocessor.py` | `AbstractModule` consumer for the `docproc:reprocess` queue |
+| Facade | `bin/lib/ingest/extract.py` | `DocumentExtractor` delegates to the registry; signatures unchanged |
+
+Canonical metadata fields were extended in `bin/lib/ingest/schema.py`
+(`CANONICAL_DOC_FIELDS`: `dc:publisher`, `file.*`, `doc.*`, `img.*`,
+`exif.*`, `pdf.*`, `archive.*`).
+
+### Processor / adapter guide
+
+A processor subclasses `BaseProcessor` (`base.py`), sets `name`,
+`priority`, and `mimetypes` / `prefixes`, and implements
+`process(ctx: StageContext) -> StageResult`. The registry resolves the
+chain with `resolve(mimetype, filename)` — sorted by `priority`,
+restricted to `available()` processors — and `run_doc_pipeline` stops
+at the first non-empty text, then runs the OCR cascade, codes,
+metadata and language stages. Unavailable engines are skipped, never
+raise.
+
+To add a document processor:
+
+1. Subclass `BaseProcessor` in `bin/lib/ingest/processors/`, set a
+   unique `name` and `priority`, and declare `mimetypes` / `prefixes`
+   (or override `supports(mimetype, filename)`).
+2. Implement `process()` returning a `StageResult` (`text`,
+   `metadata`, `children`, `codes`, `confidence`). Use
+   `self._timed(ctx, run)` so `StageError` / timing are recorded; do
+   not raise for expected bad input — return an error entry instead.
+3. Gate optional dependencies behind `available()` (import check /
+   binary check) so hosts without the engine still ingest.
+4. Register it in `default_registry()` (`__init__.py`) and, if it adds
+   canonical fields, extend `CANONICAL_DOC_FIELDS` in `schema.py`.
+5. Add tests mirroring `tests/test_doc_pipeline.py` (registry order /
+   capability, happy path on a generated fixture, degrade path with
+   the engine unavailable) and a corpus entry in
+   `tests/docproc_corpus.py` if it changes extraction accuracy.
+
+To add a source adapter, follow the existing guide above
+(`IngestAdapter` in `bin/lib/ingest/adapters.py`); binary files are
+extracted by `FileAdapter` through this processor chain instead of the
+old `is_text -> return None` rejection.
+
+### Configuration
+
+`DocProcConfig` (`bin/lib/ingest/config.py`) is loaded as
+`PipelineConfig.docproc` from the `[docproc]` INI section or the
+`docproc` object in JSON / YAML. Shipped `configs/ingest.cfg`:
+
+```ini
+[docproc]
+ocr_engine_order = ocrmypdf,tesseract,paddle,easyocr
+ocr_accept = 0.85
+ocr_reprocess_below = 0.60
+tesseract_psm = 6
+word_conf_min = 0.60
+code_decoders = zxingcpp,cv2,pyzbar,qreader
+minhash_enabled = false
+lingua_enabled = false
+translation_provider = libretranslate
+max_embedded = 50
+max_bytes = 20000000
+```
+
+| Field | Meaning | Default |
+|---|---|---|
+| `ocr_engine_order` | OCR cascade order tried by `OcrProcessor` | `ocrmypdf,tesseract,paddle,easyocr` |
+| `ocr_accept` | `StageConfidence` accept band (`>=`) | `0.85` |
+| `ocr_reprocess_below` | Below this confidence the doc is queued for reprocessing | `0.60` |
+| `tesseract_psm` | Tesseract page-segmentation mode | `6` |
+| `word_conf_min` | Tesseract TSV words below this `conf` are dropped | `0.60` |
+| `code_decoders` | QR / barcode decoder order (`zxingcpp` -> `cv2` -> `pyzbar`) | `zxingcpp,cv2,pyzbar,qreader` |
+| `minhash_enabled` | Enable MinHash near-dedup (`dedup_text.py`) | `false` |
+| `lingua_enabled` | Enable `lingua` language detection when installed | `false` |
+| `translation_provider` | `libretranslate` / `argos` / `null` (degrade-not-fail) | `libretranslate` |
+| `max_embedded` | Max embedded children expanded per document | `50` |
+| `max_bytes` | Max document bytes processed | `20000000` |
+
+The pipeline passes the extractor through to the adapter
+(`pipeline.py` -> `adapters.py`), records registry skip / record
+decisions, emits `CONTENT_MODIFIED` provenance, and forks child
+envelopes for embedded content.
+
+### OCR reprocessing and historical reprocessing
+
+Per-document (ingest time): when the primary chain yields no text for
+an `image/*` or `application/pdf` input, `OcrProcessor` runs the
+configured engine cascade (max 3 attempts, best result kept). A result
+below `ocr_accept` (`0.85`) is kept but flagged; below
+`ocr_reprocess_below` (`0.60`) the confidence band is `reprocess` and
+the registry marks the document stale with reason `low-confidence`.
+Tesseract word-level confidence below `word_conf_min` (`0.60`) is
+dropped before the mean is computed.
+
+Historical (batch): `ProcessedDocRegistry` stores one entry per
+`sha256` (`docproc:registry:{sha256}`) with `capability_ids`,
+`overall_confidence`, and `text_sha256`. A stored document is stale
+when `stale_reason()` returns:
+
+| Reason | Condition |
+|---|---|
+| `never-processed` | No registry entry for the `sha256` |
+| `capability-changed` | Stored `capability_ids` differ from the current registry's (processor / engine version or config hash changed) |
+| `low-confidence` | Stored `overall_confidence < 0.60` |
+
+Operations:
+
+```bash
+# Enqueue / inspect / drain (ProcessedDocRegistry API, registry_store.py)
+#   enqueue_reprocess(sha256, reason, requested_capability="")
+#   dequeue_reprocess() / reprocess_depth()
+#   is_current(sha256, current_capability_ids) / stale_reason(...)
+#   should_overwrite(sha256, new_confidence)  # >= stored confidence only
+
+# Queue consumer module (AbstractModule, pending_seconds pattern)
+python3 bin/modules/DocReprocessor.py
+```
+
+`DocReprocessor` dequeues one item per `compute()`, re-fetches the
+object file, re-runs `run_doc_pipeline`, and calls
+`registry.record(...)` only when `should_overwrite` passes (new
+confidence `>=` stored); otherwise the old result is kept and logged.
+The parent envelope is preserved (reprocessing forks, it does not
+replace history). With no Redis, both the registry and the queue fall
+back to in-memory state.
+
+### Install status (this host: Amazon Linux 2023, Python 3.12 `.venv-docproc`)
+
+Re-checked for this document. "Installed" means the package / binary
+is present; "Verified" means an end-to-end extraction was run by the
+test suite / benchmark below. Do not treat "installed" as "verified".
+
+| Component | Status | Evidence |
+|---|---|---|
+| PyMuPDF (`pymupdf` / `fitz`) | Verified | `PdfNativeProcessor` ran in 110-test suite + benchmark (PDF CER `0.0068`) |
+| Pillow | Verified | Image / QR fixtures generated and decoded in the benchmark |
+| OpenCV (`opencv-python-headless`) | Verified with caveat | `cv2` imports and `CodeProcessor` ran; `cv2.QRCodeEncoder` segfaults on this headless build, so QR fixtures are generated with the `qrcode` package instead |
+| `zxing-cpp` (`zxingcpp` 3.1.1) | Verified | QR accuracy 5/5 in the benchmark |
+| `datasketch` (MinHash) | Verified | Dedup pair accuracy 1.0 in the benchmark |
+| `pytesseract` (Python wrapper) | Installed, engine blocked | Wrapper imports, but `TesseractEngine.available()` is `False` (no binary, see next row) |
+| Tesseract (binary) | Blocked | `dnf` has no `tesseract` / `leptonica-devel` on AL2023; `tesseract: command not found`; `TesseractEngine.available()` -> `False` |
+| OCRmyPDF (`ocrmypdf` 17.14.2 + `ghostscript` 9.56.1 + `qpdf` 10.6.3) | Installed, engine blocked | Python package + `gs` / `qpdf` present, but `OcrMyPdfEngine.available()` is `False` without the Tesseract binary; pipeline degrades to PyMuPDF text |
+| PaddleOCR | Not installed (blocked) | `PaddleEngine.available()` -> `False`; isolated `.venv-paddle` install deferred (>500 MB + index risk) |
+| EasyOCR | Not installed | `EasyOcrEngine.available()` -> `False`; kept as a cascade fallback |
+| Apache Tika (3.3.3 jar + Java 17) | Installed, live extraction not verified | `java -version` -> `openjdk 17.0.21.1`; jar present at `/tmp/tika/tika.jar` (71 MB); server was not left running and no live `/rmeta` extraction is claimed — the `PythonFallbackExtractor` / processor chain is the tested path |
+
+Setup on a Debian / Ubuntu host (where the blocked rows resolve):
+
+```bash
+uv venv .venv-docproc --python 3.12
+uv pip install --python .venv-docproc/bin/python \
+  pymupdf Pillow opencv-python-headless zxing-cpp datasketch \
+  pytesseract ocrmypdf qrcode
+sudo apt-get install -y tesseract-ocr   # or: dnf install tesseract (non-AL2023)
+java -jar /tmp/tika/tika.jar --host 127.0.0.1 --port 9998  # optional Tika server
+```
+
+Then set `tika_url = http://127.0.0.1:9998` in `configs/ingest.cfg`
+only after a live extraction has been verified on that host.
+
+### Verified benchmarks
+
+Methodology: synthetic ground-truth corpus independent of pipeline
+output (`tests/docproc_corpus.py`: 18 items — 3 born-digital PDFs incl.
+metadata / multi-page, 3 text incl. French / long, 5 QR PNGs with known
+payloads (URL / WIFI / vCard / plain / long), 1 rendered-text PNG,
+`docx`, `xlsx`, `zip`, `tar.gz`, `gzip`, `eml`; plus 5 dedup pairs).
+Accuracy uses independent Levenshtein CER / WER
+(`tests/benchmark_docproc.py`, `repeats=3`, single-host wall-clock,
+first-PDF warmup included in per-item ms). Results are recorded in
+`tests/fixtures/docproc/benchmark_results.json`; the suite is
+`tests/test_doc_benchmark.py` (27 tests: corpus integrity, extraction
+accuracy, QR, corrupt PDF / zip / docx, unsupported / empty /
+corrupt-JPEG, OCR cascade stub `0.4 -> 0.92` / all-low best-kept /
+accept-low band / max-3 attempts, metadata / date / EXIF /
+invalid-language, language + translation fallback, near-dup pairs,
+confidence band boundaries `0.85` / `0.60`, stage-error tracking,
+historical reprocess roundtrip, benchmark smoke).
+
+```bash
+.venv-docproc/bin/python -m unittest tests.test_doc_benchmark tests.test_doc_pipeline tests.test_ingest_comprehensive tests.test_ingest_engine
+.venv-docproc/bin/python tests/benchmark_docproc.py   # rewrites tests/fixtures/docproc/benchmark_results.json
+```
+
+Verified results (this host, re-run for this document):
+
+| Check | Command | Verified result |
+|---|---|---|
+| Docproc + ingest tests | `.venv-docproc/bin/python -m unittest tests.test_doc_benchmark tests.test_doc_pipeline tests.test_ingest_comprehensive tests.test_ingest_engine` | 110 tests OK (83 prior + 27 benchmark), re-run for this document |
+| Compile | `py_compile` on all touched files | OK |
+
+| Category | n | Mean CER | Mean WER | Exact rate | Mean ms | Docs/s |
+|---|---|---|---|---|---|---|
+| `pdf` | 3 | 0.0068 | 0.0 | 1.0 | 24.53 | 40.77 |
+| `text` | 3 | 0.0 | 0.0 | 1.0 | 0.06 | 16666.67 |
+| `office` | 2 | 0.6666 | 1.0 | 0.5 | 0.23 | 4347.83 |
+| `archive` | 3 | 0.3333 | 0.3333 | 0.6667 | 0.30 | 3333.33 |
+| `eml` | 1 | 0.0 | 0.0 | 1.0 | 0.10 | 10000.0 |
+| `image` (rendered text) | 1 | 1.0 | 1.0 | 0.0 | 111.96 | — |
+
+| Signal | Verified result |
+|---|---|
+| QR accuracy (`zxingcpp`, 5 payloads incl. WIFI / vCard / long URL) | 5/5 = 1.0 exact |
+| Near-dedup pair accuracy (MinHash, 5 ground-truth pairs) | 1.0 (exact `J=1.0`, near-swap detected, unrelated `J~0.023` rejected) |
+
+Reading the numbers: `office` / `archive` CER is measured against a
+single-string ground truth while the hypothesis contains all cells /
+entries (`contains_gt=True` for every such item), so `exact_rate` is
+the meaningful metric there. The `image` row is a degradation result,
+not an OCR score: with every OCR engine unavailable the rendered-text
+PNG yields empty text (`ocr produced no text`, CER `1.0`) and falls in
+the `reprocess` band — asserted as a failure mode, not hidden. QR
+images emit the same `ocr produced no text` warning alongside their
+correct decode.
+
+Bugs found by the benchmark and fixed (not assumed): metadata
+double-prefix (`meta.raw:meta.raw:*`) on re-normalize;
+`CodeProcessor` raising `UnidentifiedImageError` on PDF / non-image
+bytes (now returns no codes); `ArchiveProcessor` polluting parent
+text with binary nested-archive bytes; `run_doc_pipeline` dropping
+nested / embedded child text when the primary text was non-empty.
+
+Not verified (environment limits, not hidden failures):
+
+- OCR accuracy (Tesseract / OCRmyPDF / Paddle / EasyOCR) — every
+  engine reports `available() == False` on this host, so no CER / WER
+  for scanned text is claimed; only the cascade / band behaviour with
+  stub engines is tested.
+- Language detection accuracy — the real `LanguagesDetector` / `lingua`
+  detector is not installed here; the stub returns `[('en', 0.5)]` for
+  French / Spanish text and translation resolves to `NullProvider`
+  (`translate -> None`). Tests assert degrade-not-fail only.
+- Live Tika server extraction — jar + Java are present but the server
+  was not run end-to-end (see install table).
+- Barcode (Code128 etc.) accuracy — `python-barcode` is absent; only
+  QR via `zxingcpp` was measured.
+- Encrypted (AES-256) PDF text — `pdf-native` records a `StageError`
+  (`document closed or encrypted`), text stays empty and
+  `pdf.encrypted` is not set (no password API in the contract).
+- `tests/test_language_bcp47` — requires `AIL_HOME/configs/core.cfg`
+  (only `core.cfg.sample` present); pre-existing environment blocker,
+  fails before any docproc code runs.
+- Thresholds `0.85` / `0.60`, TLSH `52`, MinHash `0.7` / `0.8` are
+  starting points, not calibrated values.

@@ -1,0 +1,310 @@
+{
+  "per_item": [
+    {
+      "name": "pdf-single",
+      "category": "pdf",
+      "ms": 71.55,
+      "warnings": [],
+      "cer": 0.0,
+      "wer": 0.0,
+      "exact": true,
+      "contains_gt": null,
+      "hyp_chars": 43,
+      "gt_chars": 43
+    },
+    {
+      "name": "pdf-multi",
+      "category": "pdf",
+      "ms": 1.07,
+      "warnings": [],
+      "cer": 0.0204,
+      "wer": 0.0,
+      "exact": true,
+      "contains_gt": null,
+      "hyp_chars": 50,
+      "gt_chars": 49
+    },
+    {
+      "name": "pdf-numeric",
+      "category": "pdf",
+      "ms": 0.97,
+      "warnings": [],
+      "cer": 0.0,
+      "wer": 0.0,
+      "exact": true,
+      "contains_gt": null,
+      "hyp_chars": 37,
+      "gt_chars": 37
+    },
+    {
+      "name": "text-plain",
+      "category": "text",
+      "ms": 0.05,
+      "warnings": [],
+      "cer": 0.0,
+      "wer": 0.0,
+      "exact": true,
+      "contains_gt": null,
+      "hyp_chars": 33,
+      "gt_chars": 33
+    },
+    {
+      "name": "text-french",
+      "category": "text",
+      "ms": 0.04,
+      "warnings": [],
+      "cer": 0.0,
+      "wer": 0.0,
+      "exact": true,
+      "contains_gt": null,
+      "hyp_chars": 56,
+      "gt_chars": 56
+    },
+    {
+      "name": "text-long",
+      "category": "text",
+      "ms": 0.09,
+      "warnings": [],
+      "cer": 0.0,
+      "wer": 0.0,
+      "exact": true,
+      "contains_gt": null,
+      "hyp_chars": 499,
+      "gt_chars": 499
+    },
+    {
+      "name": "qr-0",
+      "category": "image",
+      "ms": 2.47,
+      "warnings": [
+        "ocr produced no text"
+      ],
+      "qr_exact": true,
+      "qr_got": [
+        "https://example.org/alpha"
+      ]
+    },
+    {
+      "name": "qr-1",
+      "category": "image",
+      "ms": 2.42,
+      "warnings": [
+        "ocr produced no text"
+      ],
+      "qr_exact": true,
+      "qr_got": [
+        "WIFI:T:WPA;S:TestNet;P:secret;;"
+      ]
+    },
+    {
+      "name": "qr-2",
+      "category": "image",
+      "ms": 3.08,
+      "warnings": [
+        "ocr produced no text"
+      ],
+      "qr_exact": true,
+      "qr_got": [
+        "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD"
+      ]
+    },
+    {
+      "name": "qr-3",
+      "category": "image",
+      "ms": 2.04,
+      "warnings": [
+        "ocr produced no text"
+      ],
+      "qr_exact": true,
+      "qr_got": [
+        "plain text payload 12345"
+      ]
+    },
+    {
+      "name": "qr-4",
+      "category": "image",
+      "ms": 4.37,
+      "warnings": [
+        "ocr produced no text"
+      ],
+      "qr_exact": true,
+      "qr_got": [
+        "https://example.org/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      ]
+    },
+    {
+      "name": "image-rendered-text",
+      "category": "image",
+      "ms": 111.96,
+      "warnings": [
+        "ocr produced no text"
+      ],
+      "cer": 1.0,
+      "wer": 1.0,
+      "exact": false,
+      "contains_gt": null,
+      "hyp_chars": 0,
+      "gt_chars": 19
+    },
+    {
+      "name": "docx-1",
+      "category": "office",
+      "ms": 0.33,
+      "warnings": [],
+      "cer": 0.0,
+      "wer": 0.0,
+      "exact": true,
+      "contains_gt": true,
+      "hyp_chars": 45,
+      "gt_chars": 45
+    },
+    {
+      "name": "xlsx-1",
+      "category": "office",
+      "ms": 0.13,
+      "warnings": [],
+      "cer": 1.3333,
+      "wer": 2.0,
+      "exact": false,
+      "contains_gt": true,
+      "hyp_chars": 21,
+      "gt_chars": 9
+    },
+    {
+      "name": "zip-1",
+      "category": "archive",
+      "ms": 0.31,
+      "warnings": [],
+      "cer": 1.0,
+      "wer": 1.0,
+      "exact": false,
+      "contains_gt": true,
+      "hyp_chars": 28,
+      "gt_chars": 14
+    },
+    {
+      "name": "targz-1",
+      "category": "archive",
+      "ms": 0.3,
+      "warnings": [],
+      "cer": 0.0,
+      "wer": 0.0,
+      "exact": true,
+      "contains_gt": true,
+      "hyp_chars": 14,
+      "gt_chars": 14
+    },
+    {
+      "name": "gzip-1",
+      "category": "archive",
+      "ms": 0.28,
+      "warnings": [],
+      "cer": 0.0,
+      "wer": 0.0,
+      "exact": true,
+      "contains_gt": true,
+      "hyp_chars": 15,
+      "gt_chars": 15
+    },
+    {
+      "name": "eml-1",
+      "category": "eml",
+      "ms": 0.1,
+      "warnings": [],
+      "cer": 0.0,
+      "wer": 0.0,
+      "exact": true,
+      "contains_gt": true,
+      "hyp_chars": 21,
+      "gt_chars": 21
+    }
+  ],
+  "by_category": {
+    "pdf": {
+      "n": 3,
+      "mean_ms": 24.53,
+      "docs_per_sec": 40.77,
+      "mean_cer": 0.0068,
+      "mean_wer": 0.0,
+      "exact_rate": 1.0
+    },
+    "text": {
+      "n": 3,
+      "mean_ms": 0.06,
+      "docs_per_sec": 16666.67,
+      "mean_cer": 0.0,
+      "mean_wer": 0.0,
+      "exact_rate": 1.0
+    },
+    "image": {
+      "n": 6,
+      "mean_ms": 21.06,
+      "docs_per_sec": 47.48,
+      "mean_cer": 1.0,
+      "mean_wer": 1.0,
+      "exact_rate": 0.0
+    },
+    "office": {
+      "n": 2,
+      "mean_ms": 0.23,
+      "docs_per_sec": 4347.83,
+      "mean_cer": 0.6666,
+      "mean_wer": 1.0,
+      "exact_rate": 0.5
+    },
+    "archive": {
+      "n": 3,
+      "mean_ms": 0.3,
+      "docs_per_sec": 3333.33,
+      "mean_cer": 0.3333,
+      "mean_wer": 0.3333,
+      "exact_rate": 0.6667
+    },
+    "eml": {
+      "n": 1,
+      "mean_ms": 0.1,
+      "docs_per_sec": 10000.0,
+      "mean_cer": 0.0,
+      "mean_wer": 0.0,
+      "exact_rate": 1.0
+    }
+  },
+  "qr": {
+    "total": 5,
+    "exact_ok": 5,
+    "accuracy": 1.0
+  },
+  "dedup": [
+    {
+      "pair": "exact",
+      "expected_dup": true,
+      "detected": true,
+      "correct": true
+    },
+    {
+      "pair": "near-word-swap",
+      "expected_dup": true,
+      "detected": true,
+      "correct": true
+    },
+    {
+      "pair": "near-truncated",
+      "expected_dup": true,
+      "detected": true,
+      "correct": true
+    },
+    {
+      "pair": "unrelated",
+      "expected_dup": false,
+      "detected": false,
+      "correct": true
+    },
+    {
+      "pair": "unrelated-short",
+      "expected_dup": false,
+      "detected": false,
+      "correct": true
+    }
+  ],
+  "dedup_accuracy": 1.0
+}
