@@ -129,7 +129,7 @@ class PDF(AbstractDaterangeObject):
         if doc:
             doc['content'] = content
             return doc
-        return {'uuid': self.id, 'id': self.id, 'content': content}
+        return {'uuid': self.get_uuid5(self.get_global_id()), 'id': self.get_global_id(), 'content': content, 'title': self.id, 'entity_type': 'pdf'}
 
     def get_markdown_id(self):
         return self.get_correlation('item').get('item', []).pop()[1:]

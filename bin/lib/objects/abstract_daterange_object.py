@@ -135,7 +135,7 @@ class AbstractDaterangeObject(AbstractObject, ABC):
         global_id = self.get_global_id()
         content = self.get_content()
         if content:
-            return {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content, 'first': int(self.get_first_seen_timestamp()), 'last': int(self.get_last_seen_timestamp())}
+            return {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content, 'title': str(content)[:200], 'name': str(content)[:200], 'entity_type': self.type, 'tags': self.get_tags(r_list=True) if hasattr(self, 'get_tags') else [], 'first': int(self.get_first_seen_timestamp()), 'last': int(self.get_last_seen_timestamp())}
         else:
             return None
 

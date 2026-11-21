@@ -373,6 +373,11 @@
                      {% if sort == 'best' %}checked{% endif %}>
               Best match
             </label>
+            <label class="btn btn-outline-secondary {% if sort == 'hybrid' %}active{% endif %}">
+              <input type="radio" name="sort" value="hybrid" autocomplete="off"
+                     {% if sort == 'hybrid' %}checked{% endif %}>
+              Hybrid
+            </label>
           </div>
 
           <!-- MORE FILTERS -->
@@ -492,6 +497,7 @@
                 {% include 'objects/image/block_blur_img_slider.html' %}
             </div>
 
+        {% if facets %}<div class="small mb-2">Facets: {% for k, vals in facets.items() %}{% for v, c in vals.items() %}<span class="badge badge-light">{{ k }}:{{ v }} ({{ c }})</span> {% endfor %}{% endfor %}</div>{% endif %}
         <!-- RESULTS -->
         {% for obj in result %}
             {% if obj.type == 'message' %}
@@ -519,6 +525,13 @@
                 {% include 'chats_explorer/block_chat.html' %}
             {% else %}
                 {{ obj }}
+            {% endif %}
+            {% if obj.explanation %}
+            <details class="small text-muted my-1"><summary>Why this result?</summary>
+              <div>Score (query-relative 0-1): {{ obj.explanation.rankingScore }} · semanticRatio: {{ obj.explanation.semanticRatio }}</div>
+              <div>Matched: {% for t in obj.explanation.matchedTerms %}<span class="badge badge-secondary">{{ t }}</span> {% endfor %}</div>
+              {% if obj.explanation.expandedTerms %}<div>Expanded: {{ obj.explanation.expandedTerms|join(', ') }}</div>{% endif %}
+            </details>
             {% endif %}
 
         {% endfor %}

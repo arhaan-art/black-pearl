@@ -176,7 +176,7 @@ class Post(AbstractObject):
         content = self.get_content()
         if content:
             global_id = self.get_global_id()
-            return {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content,
+            return {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content, 'entity_type': 'post',
                     'fid': self.get_forum_id(), 'type': self.type, 'last': int(self.get_timestamp())}
         return None
 

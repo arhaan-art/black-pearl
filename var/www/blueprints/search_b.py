@@ -81,6 +81,11 @@ def search_dashboard():
     page = request.args.get('page', 1)
 
     sort = request.args.get('sort', 'recent')
+    facets = {}
+    for _fk in ('lang', 'source', 'entity_type'):
+        _fv = request.args.get(_fk)
+        if _fv: facets[_fk] = [_fv]
+    explain = request.args.get('explain') == '1'
 
     # selected_scopes -> scope_human
 
@@ -88,7 +93,7 @@ def search_dashboard():
     if search:
         r = search_engine.api_search({'indexes': indexes, 'search': search, 'page': page, 'user_id': user_id,
                                       'from': last_seen_from, 'to': last_seen_to, 'sort': sort,
-                                      'forum_ids': forum_ids, 'forum_types': forum_types})
+                                      'forum_ids': forum_ids, 'forum_types': forum_types, 'facets': facets, 'explain': explain})
         if r[1] != 200:
             error_type = r[0].get('error_type')
             if error_type == 'meilisearch_timeout':
@@ -126,6 +131,7 @@ def search_dashboard():
                            to_search=search,
                            sort=sort,
                            last_seen_from=last_seen_from,
+                           facets=pagination.get('facets') if pagination else {},
                            last_seen_to=last_seen_to,
                            search_error=search_error,
                            result=result, pagination=pagination)

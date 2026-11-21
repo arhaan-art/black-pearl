@@ -276,7 +276,14 @@ class Message(AbstractObject):
         global_id = self.get_global_id()
         content = self.get_content()
         if content:
-            return {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content, 'last': int(timestamp)}
+            doc = {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content, 'entity_type': 'message', 'last': int(timestamp)}
+            try: doc['source'] = self.get_protocol()
+            except Exception: pass
+            try:
+                lang = self.get_language()
+                if lang: doc['lang'] = str(lang)
+            except Exception: pass
+            return doc
         else:
             return None
 

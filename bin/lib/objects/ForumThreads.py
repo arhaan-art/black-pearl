@@ -271,8 +271,8 @@ class ForumThread(AbstractSubtypeObject):
         if content:
             first = self.get_first_seen_timestamp()
             last = self.get_last_seen_timestamp()
-            return {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content,
-                    'fid': self.get_forum_id(), 'type': self.type,
+            return {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content, 'name': content, 'title': content,
+                    'fid': self.get_forum_id(), 'type': self.type, 'entity_type': 'forum-thread',
                     'first': int(first), 'last': int(last)}
         return None
 

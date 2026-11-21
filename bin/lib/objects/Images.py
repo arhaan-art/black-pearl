@@ -124,7 +124,10 @@ class Image(AbstractDaterangeObject):
         global_id = self.get_global_id()
         content = self.get_description()
         if content:
-            return {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content, 'last': int(time.time())}
+            _last = int(time.time())
+            try: _last = int(self.get_last_seen_timestamp())
+            except Exception: pass
+            return {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content, 'title': self.id, 'entity_type': self.type, 'last': _last}
         else:
             return None
 

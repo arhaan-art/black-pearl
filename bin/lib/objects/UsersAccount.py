@@ -115,9 +115,12 @@ class UserAccount(AbstractSubtypeObject):
         description = self.get_info()
         if not description:
             description = ''
-        content = f'{self.id} {username} {description}'
+        content = description or username or str(self.id)
         if content and timestamp:
-            return {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content, 'last': int(timestamp)}
+            doc = {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content, 'username': username, 'name': username, 'entity_type': 'user-account', 'last': int(timestamp)}
+            try: doc['source'] = self.get_protocol()
+            except Exception: pass
+            return doc
         else:
             return None
 

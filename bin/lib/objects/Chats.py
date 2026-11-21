@@ -73,9 +73,9 @@ class Chat(AbstractChatObject):
         description = self.get_info()
         if not description:
             description = ''
-        content = f'{self.id} {username} {name} {description}'
+        content = description or name or username
         if content:
-            return {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content, 'last': int(timestamp)}
+            return {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content, 'title': name, 'name': name, 'username': username, 'source': self.subtype, 'entity_type': 'chat', 'last': int(timestamp)}
         else:
             return None
 
